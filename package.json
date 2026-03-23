@@ -7,10 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "deploy": "npm run deploy:cloudflare",
-    "deploy:cloudflare": "npm run build && npx wrangler pages deploy dist",
-    "deploy:cloudflare:project": "npx wrangler pages project create",
-    "preview:cloudflare": "npm run build && npx wrangler pages dev dist"
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:cloudflare": "npm run deploy",
+    "preview:cloudflare": "npm run build && wrangler dev"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

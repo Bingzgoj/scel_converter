@@ -16,42 +16,41 @@ npm install
 npm run dev      # 开发模式
 npm run build    # 构建静态文件 → dist/
 npm run preview  # 预览构建结果
+npm run deploy   # 构建并部署到 Cloudflare
 ```
 
-## Cloudflare Pages 部署
+## Cloudflare 部署
 
-这个项目是纯静态 Vite 应用，可以直接部署到 Cloudflare Pages。
+这个项目已经配置为通过 Wrangler 将 `dist/` 作为 Cloudflare Workers Static Assets 部署。
 
-### 方式一：连接仓库自动构建
-
-在 Cloudflare Pages 后台连接仓库时，使用以下构建设置：
-
-- **Framework preset**: `None`
-- **Build command**: `npm run build`
-- **Build output directory**: `dist`
-
-### 方式二：Wrangler 直接上传
-
-项目已经添加了 Cloudflare Pages 部署脚本：
-
-```bash
-npm run deploy:cloudflare:project  # 首次创建 Pages 项目
-npm run deploy                     # 构建并上传 dist/ 到 Cloudflare Pages
-npm run preview:cloudflare         # 用 Wrangler 本地预览 Pages 静态产物
-```
-
-首次使用前需要先登录 Cloudflare：
+首次使用前先登录 Cloudflare：
 
 ```bash
 npx wrangler login
 ```
 
-如果你是在 CI 中部署，建议显式传入 Pages 项目名：
+常用命令：
+
+```bash
+npm run deploy              # 等价于: npm run build && wrangler deploy
+npx wrangler deploy         # 直接使用 Wrangler 部署
+npm run preview:cloudflare  # 本地用 Wrangler 预览 dist/
+```
+
+项目根目录中的 `wrangler.jsonc` 已包含以下关键配置：
+
+- Worker 名称：`scel-converter`
+- 静态资源目录：`./dist`
+- SPA 回退：`not_found_handling = "single-page-application"`
+
+如果你在 CI 中部署，可以直接使用：
 
 ```bash
 npm run build
-npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME"
+npx wrangler deploy
 ```
+
+如果你更喜欢纯静态托管，也可以继续把 `dist/` 发布到其他静态平台。
 
 ## 静态部署
 
@@ -62,7 +61,8 @@ npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME"
 | GitHub Pages | 推送 `dist/` 到 `gh-pages` 分支 |
 | Netlify | 拖拽 `dist/` 文件夹到 Netlify |
 | Vercel | `vercel --prod` |
-| Cloudflare Pages | 连接仓库自动构建，或使用 `npm run deploy` 直接上传 |
+| Cloudflare Workers | `npm run deploy` 或 `npx wrangler deploy` |
+| Cloudflare Pages | 连接仓库，构建命令 `npm run build`，输出目录 `dist` |
 
 ## 项目结构
 
@@ -74,7 +74,8 @@ scel-converter/
 │   └── main.ts         # UI 交互逻辑
 ├── package.json
 ├── tsconfig.json
-└── vite.config.ts
+├── vite.config.ts
+└── wrangler.jsonc      # Cloudflare Workers 静态资源配置
 ```
 
 ## .scel 格式说明
