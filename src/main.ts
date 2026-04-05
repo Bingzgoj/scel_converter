@@ -1,18 +1,13 @@
 import { parseScel, wordsToText, type ScelResult } from './parser'
 
-/* ─────────────────────────────────────────
-   Types
-───────────────────────────────────────── */
 interface OutputFile {
   name: string
   blob: Blob
   count: number
+  text: string
   url: string
 }
 
-/* ─────────────────────────────────────────
-   DOM refs
-───────────────────────────────────────── */
 const fileInput    = document.getElementById('fileInput')    as HTMLInputElement
 const browseBtn    = document.getElementById('browseBtn')    as HTMLButtonElement
 const dropZone     = document.getElementById('dropZone')     as HTMLDivElement
@@ -27,16 +22,15 @@ const logPanel     = document.getElementById('logPanel')     as HTMLDivElement
 const resultsEl    = document.getElementById('results')      as HTMLDivElement
 const resultItems  = document.getElementById('resultItems')  as HTMLDivElement
 const dlAllBtn     = document.getElementById('dlAllBtn')     as HTMLButtonElement
+const previewEl    = document.getElementById('preview')      as HTMLDivElement
+const previewName  = document.getElementById('previewName')  as HTMLSpanElement
+const previewMeta  = document.getElementById('previewMeta')  as HTMLSpanElement
+const previewBody  = document.getElementById('previewBody')  as HTMLPreElement
 
-/* ─────────────────────────────────────────
-   State
-───────────────────────────────────────── */
 let pendingFiles: File[]    = []
 let outputFiles:  OutputFile[] = []
+const previewLineLimit = 200
 
-/* ─────────────────────────────────────────
-   File selection
-───────────────────────────────────────── */
 browseBtn.addEventListener('click', () => fileInput.click())
 fileInput.addEventListener('change', () => {
   addFiles(Array.from(fileInput.files ?? []))
@@ -90,7 +84,6 @@ function renderFileList(): void {
 clearBtn.addEventListener('click', reset)
 
 function reset(): void {
-  // revoke old object URLs
   outputFiles.forEach(f => URL.revokeObjectURL(f.url))
   pendingFiles = []
   outputFiles  = []
@@ -98,23 +91,27 @@ function reset(): void {
   logPanel.classList.remove('visible')
   resultsEl.classList.remove('visible')
   progressWrap.classList.remove('visible')
+  previewEl.classList.remove('visible')
   logPanel.innerHTML   = ''
   resultItems.innerHTML = ''
+  previewName.textContent = ''
+  previewMeta.textContent = ''
+  previewBody.textContent = ''
 }
 
-/* ─────────────────────────────────────────
-   Convert
-───────────────────────────────────────── */
 convertBtn.addEventListener('click', async () => {
   if (!pendingFiles.length) return
 
-  // cleanup previous run
   outputFiles.forEach(f => URL.revokeObjectURL(f.url))
   outputFiles = []
   resultItems.innerHTML = ''
   logPanel.innerHTML    = ''
   logPanel.classList.add('visible')
   resultsEl.classList.remove('visible')
+  previewEl.classList.remove('visible')
+  previewName.textContent = ''
+  previewMeta.textContent = ''
+  previewBody.textContent = ''
   progressWrap.classList.add('visible')
   convertBtn.disabled = true
 
@@ -125,7 +122,7 @@ convertBtn.addEventListener('click', async () => {
 
     try {
       const buf = await file.arrayBuffer()
-      const result: ScelResult = parseScel(buf)
+      const result: ScelResult = parseScel(buf, file.name)
 
       log(`  词库名:  ${result.meta.name || '(无)'}`, 'ok')
       log(`  词库类型: ${result.meta.type || '(无)'}`, 'ok')
@@ -135,15 +132,15 @@ convertBtn.addEventListener('click', async () => {
       const blob    = new Blob([text], { type: 'text/plain;charset=utf-8' })
       const url     = URL.createObjectURL(blob)
       const outName = file.name.replace(/\.scel$/i, '.txt')
-      const entry: OutputFile = { name: outName, blob, count: result.words.length, url }
+      const entry: OutputFile = { name: outName, blob, count: result.words.length, text, url }
 
       outputFiles.push(entry)
       appendResult(entry, outputFiles.length)
+      if (outputFiles.length === 1) showPreview(entry)
     } catch (err) {
       log(`  ✗ 解析失败: ${(err as Error).message}`, 'err')
     }
 
-    // yield to browser render loop
     await new Promise<void>(r => setTimeout(r, 0))
   }
 
@@ -155,9 +152,6 @@ convertBtn.addEventListener('click', async () => {
   convertBtn.disabled = false
 })
 
-/* ─────────────────────────────────────────
-   Download
-───────────────────────────────────────── */
 dlAllBtn.addEventListener('click', () => {
   outputFiles.forEach(f => triggerDownload(f.url, f.name))
 })
@@ -169,8 +163,12 @@ function appendResult(f: OutputFile, idx: number): void {
   item.innerHTML = `
     <span class="result-name">${f.name}</span>
     <span class="result-meta">${f.count.toLocaleString()} 词条 · ${fmtSize(f.blob.size)}</span>
-    <a class="btn-dl" href="${f.url}" download="${f.name}">↓ 下载</a>
+    <div class="result-actions">
+      <button class="btn-preview" type="button">预览</button>
+      <a class="btn-dl" href="${f.url}" download="${f.name}">↓ 下载</a>
+    </div>
   `
+  item.querySelector<HTMLButtonElement>('.btn-preview')?.addEventListener('click', () => showPreview(f))
   resultItems.appendChild(item)
 }
 
@@ -181,13 +179,27 @@ function triggerDownload(url: string, name: string): void {
   a.click()
 }
 
-/* ─────────────────────────────────────────
-   Helpers
-───────────────────────────────────────── */
 function setProgress(pct: number, label: string): void {
   progressFill.style.width  = `${pct}%`
   progressPct.textContent   = `${pct}%`
   progressText.textContent  = label
+}
+
+function showPreview(file: OutputFile): void {
+  const lines = getLines(file.text)
+  const visibleLines = lines.slice(0, previewLineLimit)
+
+  previewName.textContent = file.name
+  previewMeta.textContent = lines.length > previewLineLimit
+    ? `显示前 ${previewLineLimit} / 共 ${lines.length.toLocaleString()} 行 · ${fmtSize(file.blob.size)}`
+    : `${lines.length.toLocaleString()} 行 · ${fmtSize(file.blob.size)}`
+  previewBody.textContent = visibleLines.join('\n')
+
+  if (lines.length > previewLineLimit) {
+    previewBody.textContent += '\n\n……'
+  }
+
+  previewEl.classList.add('visible')
 }
 
 function log(msg: string, type: 'ok' | 'err' | 'info' | '' = ''): void {
@@ -202,4 +214,9 @@ function fmtSize(bytes: number): string {
   if (bytes < 1024)    return `${bytes} B`
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1048576).toFixed(1)} MB`
+}
+
+function getLines(text: string): string[] {
+  const trimmed = text.trimEnd()
+  return trimmed ? trimmed.split('\n') : []
 }
